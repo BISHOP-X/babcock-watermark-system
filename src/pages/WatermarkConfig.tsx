@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Settings, Eye, Download, Palette, Type, Move, Sliders, User, Users } from "lucide-react";
+import { ArrowLeft, Settings, Eye, Download, Palette, Type, Move, Sliders, User, Users, Layers, RotateCw, Grid3X3, Sparkles } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,7 @@ import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Header } from "@/components/Header";
 import { WatermarkPreview } from "@/components/WatermarkPreview";
 import { useToast } from "@/hooks/use-toast";
@@ -29,7 +30,21 @@ const WatermarkConfig = () => {
     text: "College of Postgraduate School, BU",
     opacity: 30,
     fontSize: 'medium',
-    color: '#1e40af'
+    color: '#1e40af',
+    // STAGE 5: Default advanced settings
+    position: { type: 'center' },
+    style: { 
+      fontFamily: 'helvetica',
+      rotation: -45 
+    },
+    transparency: { 
+      type: 'uniform',
+      value: 30 
+    },
+    pageSpecific: { 
+      pageRange: 'all' 
+    },
+    template: 'custom'
   });
 
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
@@ -82,6 +97,51 @@ const WatermarkConfig = () => {
     setSettings(prev => ({
       ...prev,
       [key]: value
+    }));
+    setHasUnsavedChanges(true);
+  };
+
+  // STAGE 5: Enhanced setting handlers for nested objects
+  const handlePositionChange = (key: string, value: any) => {
+    setSettings(prev => ({
+      ...prev,
+      position: {
+        ...prev.position,
+        [key]: value
+      }
+    }));
+    setHasUnsavedChanges(true);
+  };
+
+  const handleStyleChange = (key: string, value: any) => {
+    setSettings(prev => ({
+      ...prev,
+      style: {
+        ...prev.style,
+        [key]: value
+      }
+    }));
+    setHasUnsavedChanges(true);
+  };
+
+  const handleTransparencyChange = (key: string, value: any) => {
+    setSettings(prev => ({
+      ...prev,
+      transparency: {
+        ...prev.transparency,
+        [key]: value
+      }
+    }));
+    setHasUnsavedChanges(true);
+  };
+
+  const handlePageSpecificChange = (key: string, value: any) => {
+    setSettings(prev => ({
+      ...prev,
+      pageSpecific: {
+        ...prev.pageSpecific,
+        [key]: value
+      }
     }));
     setHasUnsavedChanges(true);
   };
@@ -214,108 +274,378 @@ const WatermarkConfig = () => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Settings Panel */}
+          {/* Enhanced Settings Panel with Tabs */}
           <div className="space-y-6 animate-slide-up">
             <Card className="shadow-card border-0 bg-card/80 backdrop-blur-sm">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Settings className="h-5 w-5 text-primary" />
-                  Watermark Configuration
+                  <Sparkles className="h-5 w-5 text-primary" />
+                  Advanced Watermark Configuration
                 </CardTitle>
                 <CardDescription>
-                  Adjust the appearance and settings for your watermark
+                  Professional watermarking with advanced positioning, styling, and effects
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-6">
-                {/* Watermark Text */}
-                <div className="space-y-2">
-                  <Label htmlFor="watermark-text" className="flex items-center gap-2">
-                    <Type className="h-4 w-4 text-primary" />
-                    Watermark Text
-                  </Label>
-                  <Input
-                    id="watermark-text"
-                    value={settings.text}
-                    onChange={(e) => handleSettingChange('text', e.target.value)}
-                    placeholder="Enter watermark text"
-                    className="font-medium"
-                  />
-                </div>
+              <CardContent>
+                <Tabs defaultValue="basic" className="w-full">
+                  <TabsList className="grid w-full grid-cols-4">
+                    <TabsTrigger value="basic">Basic</TabsTrigger>
+                    <TabsTrigger value="position">Position</TabsTrigger>
+                    <TabsTrigger value="styling">Styling</TabsTrigger>
+                    <TabsTrigger value="advanced">Advanced</TabsTrigger>
+                  </TabsList>
 
-                <Separator />
-
-                {/* Opacity Control */}
-                <div className="space-y-3">
-                  <Label className="flex items-center gap-2">
-                    <Sliders className="h-4 w-4 text-primary" />
-                    Opacity: {settings.opacity}%
-                  </Label>
-                  <Slider
-                    value={[settings.opacity]}
-                    onValueChange={(value) => handleSettingChange('opacity', value[0])}
-                    min={10}
-                    max={70}
-                    step={5}
-                    className="w-full"
-                  />
-                  <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>10% (Light)</span>
-                    <span>70% (Dark)</span>
-                  </div>
-                </div>
-
-                <Separator />
-
-                {/* Font Size */}
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-2">
-                    <Type className="h-4 w-4 text-primary" />
-                    Font Size
-                  </Label>
-                  <Select 
-                    value={settings.fontSize} 
-                    onValueChange={(value: 'small' | 'medium' | 'large') => 
-                      handleSettingChange('fontSize', value)
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="small">Small</SelectItem>
-                      <SelectItem value="medium">Medium</SelectItem>
-                      <SelectItem value="large">Large</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <Separator />
-
-                {/* Color Selection */}
-                <div className="space-y-3">
-                  <Label className="flex items-center gap-2">
-                    <Palette className="h-4 w-4 text-primary" />
-                    Watermark Color
-                  </Label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {colorOptions.map((color) => (
-                      <Button
-                        key={color.value}
-                        variant={settings.color === color.value ? "default" : "outline"}
-                        className="justify-start"
-                        onClick={() => handleSettingChange('color', color.value)}
+                  {/* Basic Settings Tab */}
+                  <TabsContent value="basic" className="space-y-6 mt-6">
+                    {/* Template Selection */}
+                    <div className="space-y-2">
+                      <Label className="flex items-center gap-2">
+                        <Settings className="h-4 w-4 text-primary" />
+                        Template
+                      </Label>
+                      <Select 
+                        value={settings.template || 'custom'} 
+                        onValueChange={(value) => handleSettingChange('template', value)}
                       >
-                        <div 
-                          className="w-4 h-4 rounded-full mr-2" 
-                          style={{ backgroundColor: color.value }}
-                        />
-                        {color.label}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="custom">Custom</SelectItem>
+                          <SelectItem value="corporate">Corporate</SelectItem>
+                          <SelectItem value="confidential">Confidential</SelectItem>
+                          <SelectItem value="draft">Draft</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
 
-                <Separator />
+                    <Separator />
+
+                    {/* Watermark Text */}
+                    <div className="space-y-2">
+                      <Label htmlFor="watermark-text" className="flex items-center gap-2">
+                        <Type className="h-4 w-4 text-primary" />
+                        Watermark Text
+                      </Label>
+                      <Input
+                        id="watermark-text"
+                        value={settings.text}
+                        onChange={(e) => handleSettingChange('text', e.target.value)}
+                        placeholder="Enter watermark text (use {pageNumber} for page numbers)"
+                        className="font-medium"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Use {'{pageNumber}'} to include page numbers in your watermark
+                      </p>
+                    </div>
+
+                    <Separator />
+
+                    {/* Font Size */}
+                    <div className="space-y-2">
+                      <Label className="flex items-center gap-2">
+                        <Type className="h-4 w-4 text-primary" />
+                        Font Size
+                      </Label>
+                      <Select 
+                        value={settings.fontSize} 
+                        onValueChange={(value: 'small' | 'medium' | 'large') => 
+                          handleSettingChange('fontSize', value)
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="small">Small</SelectItem>
+                          <SelectItem value="medium">Medium</SelectItem>
+                          <SelectItem value="large">Large</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <Separator />
+
+                    {/* Color Selection */}
+                    <div className="space-y-3">
+                      <Label className="flex items-center gap-2">
+                        <Palette className="h-4 w-4 text-primary" />
+                        Watermark Color
+                      </Label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {colorOptions.map((color) => (
+                          <Button
+                            key={color.value}
+                            variant={settings.color === color.value ? "default" : "outline"}
+                            className="justify-start"
+                            onClick={() => handleSettingChange('color', color.value)}
+                          >
+                            <div 
+                              className="w-4 h-4 rounded-full mr-2" 
+                              style={{ backgroundColor: color.value }}
+                            />
+                            {color.label}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  </TabsContent>
+
+                  {/* Position Settings Tab */}
+                  <TabsContent value="position" className="space-y-6 mt-6">
+                    {/* Position Type */}
+                    <div className="space-y-2">
+                      <Label className="flex items-center gap-2">
+                        <Grid3X3 className="h-4 w-4 text-primary" />
+                        Position Type
+                      </Label>
+                      <Select 
+                        value={settings.position?.type || 'center'} 
+                        onValueChange={(value) => handlePositionChange('type', value)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="center">Center (Classic)</SelectItem>
+                          <SelectItem value="corner">Corner Position</SelectItem>
+                          <SelectItem value="multiple">Multiple Positions</SelectItem>
+                          <SelectItem value="custom">Custom Coordinates</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Corner Selection (when corner type selected) */}
+                    {settings.position?.type === 'corner' && (
+                      <div className="space-y-2">
+                        <Label>Corner Position</Label>
+                        <Select 
+                          value={settings.position?.corner || 'bottom-right'} 
+                          onValueChange={(value) => handlePositionChange('corner', value)}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="top-left">Top Left</SelectItem>
+                            <SelectItem value="top-right">Top Right</SelectItem>
+                            <SelectItem value="bottom-left">Bottom Left</SelectItem>
+                            <SelectItem value="bottom-right">Bottom Right</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+
+                    <Separator />
+
+                    {/* Position Offset */}
+                    <div className="space-y-3">
+                      <Label>Position Offset</Label>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="offset-x" className="text-sm">X Offset</Label>
+                          <Input
+                            id="offset-x"
+                            type="number"
+                            value={settings.position?.offset?.x || 0}
+                            onChange={(e) => handlePositionChange('offset', {
+                              ...settings.position?.offset,
+                              x: parseInt(e.target.value) || 0
+                            })}
+                            placeholder="0"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="offset-y" className="text-sm">Y Offset</Label>
+                          <Input
+                            id="offset-y"
+                            type="number"
+                            value={settings.position?.offset?.y || 0}
+                            onChange={(e) => handlePositionChange('offset', {
+                              ...settings.position?.offset,
+                              y: parseInt(e.target.value) || 0
+                            })}
+                            placeholder="0"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </TabsContent>
+
+                  {/* Styling Settings Tab */}
+                  <TabsContent value="styling" className="space-y-6 mt-6">
+                    {/* Font Family */}
+                    <div className="space-y-2">
+                      <Label className="flex items-center gap-2">
+                        <Type className="h-4 w-4 text-primary" />
+                        Font Family
+                      </Label>
+                      <Select 
+                        value={settings.style?.fontFamily || 'helvetica'} 
+                        onValueChange={(value) => handleStyleChange('fontFamily', value)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="helvetica">Helvetica (Modern)</SelectItem>
+                          <SelectItem value="times">Times Roman (Classic)</SelectItem>
+                          <SelectItem value="courier">Courier (Monospace)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <Separator />
+
+                    {/* Rotation Angle */}
+                    <div className="space-y-3">
+                      <Label className="flex items-center gap-2">
+                        <RotateCw className="h-4 w-4 text-primary" />
+                        Rotation: {settings.style?.rotation || -45}°
+                      </Label>
+                      <Slider
+                        value={[settings.style?.rotation || -45]}
+                        onValueChange={(value) => handleStyleChange('rotation', value[0])}
+                        min={-180}
+                        max={180}
+                        step={15}
+                        className="w-full"
+                      />
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>-180°</span>
+                        <span>0°</span>
+                        <span>180°</span>
+                      </div>
+                    </div>
+
+                    <Separator />
+
+                    {/* Opacity Control */}
+                    <div className="space-y-3">
+                      <Label className="flex items-center gap-2">
+                        <Sliders className="h-4 w-4 text-primary" />
+                        Opacity: {settings.opacity}%
+                      </Label>
+                      <Slider
+                        value={[settings.opacity]}
+                        onValueChange={(value) => handleSettingChange('opacity', value[0])}
+                        min={10}
+                        max={70}
+                        step={5}
+                        className="w-full"
+                      />
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>10% (Light)</span>
+                        <span>70% (Dark)</span>
+                      </div>
+                    </div>
+                  </TabsContent>
+
+                  {/* Advanced Settings Tab */}
+                  <TabsContent value="advanced" className="space-y-6 mt-6">
+                    {/* Transparency Type */}
+                    <div className="space-y-2">
+                      <Label className="flex items-center gap-2">
+                        <Layers className="h-4 w-4 text-primary" />
+                        Transparency Effect
+                      </Label>
+                      <Select 
+                        value={settings.transparency?.type || 'uniform'} 
+                        onValueChange={(value) => handleTransparencyChange('type', value)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="uniform">Uniform</SelectItem>
+                          <SelectItem value="gradient">Gradient</SelectItem>
+                          <SelectItem value="fade">Fade from Center</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <Separator />
+
+                    {/* Page Range */}
+                    <div className="space-y-2">
+                      <Label className="flex items-center gap-2">
+                        <Move className="h-4 w-4 text-primary" />
+                        Apply to Pages
+                      </Label>
+                      <Select 
+                        value={settings.pageSpecific?.pageRange || 'all'} 
+                        onValueChange={(value) => handlePageSpecificChange('pageRange', value)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Pages</SelectItem>
+                          <SelectItem value="first">First Page Only</SelectItem>
+                          <SelectItem value="last">Last Page Only</SelectItem>
+                          <SelectItem value="odd">Odd Pages</SelectItem>
+                          <SelectItem value="even">Even Pages</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <Separator />
+
+                    {/* Shadow Effects Toggle */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="shadow-effects" className="flex items-center gap-2">
+                          <Sparkles className="h-4 w-4 text-primary" />
+                          Shadow Effects
+                        </Label>
+                        <Switch
+                          id="shadow-effects"
+                          checked={!!settings.style?.effects?.shadow}
+                          onCheckedChange={(checked) => 
+                            handleStyleChange('effects', {
+                              ...settings.style?.effects,
+                              shadow: checked ? { offsetX: 2, offsetY: 2, blur: 1, color: '#000000' } : undefined
+                            })
+                          }
+                        />
+                      </div>
+                      {settings.style?.effects?.shadow && (
+                        <div className="ml-6 space-y-2 text-sm text-muted-foreground">
+                          <p>Shadow effects are enabled for professional appearance</p>
+                        </div>
+                      )}
+                    </div>
+
+                    <Separator />
+
+                    {/* Outline Effects Toggle */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="outline-effects" className="flex items-center gap-2">
+                          <Type className="h-4 w-4 text-primary" />
+                          Text Outline
+                        </Label>
+                        <Switch
+                          id="outline-effects"
+                          checked={!!settings.style?.effects?.outline}
+                          onCheckedChange={(checked) => 
+                            handleStyleChange('effects', {
+                              ...settings.style?.effects,
+                              outline: checked ? { width: 1, color: '#000000' } : undefined
+                            })
+                          }
+                        />
+                      </div>
+                      {settings.style?.effects?.outline && (
+                        <div className="ml-6 space-y-2 text-sm text-muted-foreground">
+                          <p>Text outline enhances readability on various backgrounds</p>
+                        </div>
+                      )}
+                    </div>
+                  </TabsContent>
+                </Tabs>
+
+                <Separator className="my-6" />
 
                 {/* Processing Info */}
                 <div className="bg-primary-light/20 rounded-lg p-4">
@@ -334,8 +664,8 @@ const WatermarkConfig = () => {
                   </div>
                   <CardDescription className="text-sm">
                     {isSingleMode 
-                      ? 'These settings will be applied to your document'
-                      : `These settings will be applied to all ${batchData?.files?.length || 0} documents in this batch`
+                      ? 'Advanced watermarking settings will be applied to your document'
+                      : `Advanced watermarking settings will be applied to all ${batchData?.files?.length || 0} documents in this batch`
                     }
                   </CardDescription>
                   {batchId && (

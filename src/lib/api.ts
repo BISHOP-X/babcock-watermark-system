@@ -1,11 +1,59 @@
 import { supabase } from './supabase'
 import { v4 as uuidv4 } from 'uuid'
 
+// STAGE 5: Advanced Professional Watermarking System
+export interface WatermarkPosition {
+  type: 'center' | 'corner' | 'custom' | 'multiple'
+  coordinates?: { x: number; y: number }[]
+  corner?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
+  offset?: { x: number; y: number }
+}
+
+export interface WatermarkStyle {
+  fontFamily: 'times' | 'helvetica' | 'courier'
+  rotation: number // Any angle in degrees
+  effects?: {
+    shadow?: { offsetX: number; offsetY: number; blur: number; color: string }
+    gradient?: { from: string; to: string; direction: 'horizontal' | 'vertical' }
+    outline?: { width: number; color: string }
+  }
+}
+
+export interface WatermarkTransparency {
+  type: 'uniform' | 'gradient' | 'fade'
+  value: number | { start: number; end: number }
+  blendMode?: 'normal' | 'multiply' | 'overlay' | 'screen'
+}
+
+export interface PageSpecificWatermark {
+  pageRange: 'all' | 'first' | 'last' | 'odd' | 'even' | number[]
+  conditional?: {
+    hasImages?: boolean
+    hasTables?: boolean
+    contentLength?: 'short' | 'medium' | 'long'
+  }
+  customText?: string
+}
+
 export interface WatermarkSettings {
+  // Basic settings (Stage 1-4 compatibility)
   text: string
   opacity: number
   fontSize: 'small' | 'medium' | 'large'
   color: string
+  
+  // STAGE 5: Advanced Professional Features
+  position?: WatermarkPosition
+  style?: WatermarkStyle
+  transparency?: WatermarkTransparency
+  pageSpecific?: PageSpecificWatermark
+  
+  // Professional Templates
+  template?: 'corporate' | 'confidential' | 'draft' | 'custom'
+  layering?: {
+    zIndex: number
+    multiple: boolean
+  }
 }
 
 export interface BatchData {

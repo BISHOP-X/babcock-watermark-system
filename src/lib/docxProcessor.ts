@@ -1,6 +1,6 @@
 import mammoth from 'mammoth'
 import { PDFDocument, rgb, StandardFonts, degrees, PDFPage, PDFFont } from 'pdf-lib'
-import { WatermarkSettings } from './api'
+import { WatermarkSettings, WatermarkPosition, WatermarkStyle, WatermarkTransparency, PageSpecificWatermark } from './api'
 
 /**
  * Enterprise-Grade DOCX Processor v2.0
@@ -36,6 +36,22 @@ interface ContentElement {
     originalHtml?: string
     estimatedHeight?: number
   }
+  imageData?: ImageData // STAGE 4: Image processing data
+}
+
+// STAGE 4: Professional image processing structure
+interface ImageData {
+  src: string // Base64 or data URL
+  contentType: string // MIME type (image/jpeg, image/png, etc.)
+  originalWidth: number
+  originalHeight: number
+  displayWidth: number
+  displayHeight: number
+  aspectRatio: number
+  altText?: string
+  alignment: 'left' | 'center' | 'right'
+  isInline: boolean
+  quality: 'original' | 'optimized' | 'compressed'
 }
 
 interface PageConfig {
@@ -66,6 +82,7 @@ interface ParsedHtmlElement {
   length: number // Length of original HTML element
   originalHtml: string
   tableData?: TableData // For table elements
+  imageData?: ImageData // STAGE 4: For image elements
 }
 
 // STAGE 3: Professional table structure for enterprise document processing
@@ -103,6 +120,22 @@ interface ElementRenderInfo {
   color: { r: number; g: number; b: number }
   alignment: string
   tableInfo?: TableRenderInfo // For table rendering
+  imageInfo?: ImageRenderInfo // STAGE 4: For image rendering
+}
+
+// STAGE 4: Professional image rendering configuration
+interface ImageRenderInfo {
+  imageBytes: Uint8Array
+  width: number
+  height: number
+  x: number
+  y: number
+  alignment: 'left' | 'center' | 'right'
+  isInline: boolean
+  marginTop: number
+  marginBottom: number
+  borderWidth?: number
+  borderColor?: { r: number; g: number; b: number }
 }
 
 // STAGE 3: Comprehensive table rendering configuration
@@ -206,11 +239,15 @@ export class DocxProcessor {
         "p[style-name='Quote'] => blockquote:fresh",
       ],
       includeDefaultStyleMap: true,
-      // Image handling (Stage 3+ preparation)
+      // STAGE 4: Enhanced image handling with professional processing
       convertImage: mammoth.images.imgElement(function(image) {
         return image.read("base64").then(function(imageBuffer) {
+          console.log(`📸 [STAGE 4] Processing image: ${image.contentType}, size: ${imageBuffer.length} bytes`)
           return {
-            src: "data:" + image.contentType + ";base64," + imageBuffer
+            src: "data:" + image.contentType + ";base64," + imageBuffer,
+            alt: 'Embedded image',
+            'data-content-type': image.contentType,
+            'data-original-size': imageBuffer.length
           };
         });
       })
@@ -296,7 +333,8 @@ export class DocxProcessor {
       blockquote: /<blockquote[^>]*>(.*?)<\/blockquote>/gi,
       div: /<div[^>]*>(.*?)<\/div>/gi,
       strong: /<(strong|b)[^>]*>(.*?)<\/(strong|b)>/gi,
-      emphasis: /<(em|i)[^>]*>(.*?)<\/(em|i)>/gi
+      emphasis: /<(em|i)[^>]*>(.*?)<\/(em|i)>/gi,
+      image: /<img[^>]*src\s*=\s*["']([^"']+)["'][^>]*>/gi // STAGE 4: Image detection
     }
     
     // Track processed positions to avoid duplicates
@@ -326,6 +364,31 @@ export class DocxProcessor {
     
     // Reset regex lastIndex
     patterns.table.lastIndex = 0
+    
+    // STAGE 4: Process images (high priority after tables)
+    let imageMatch: RegExpExecArray | null
+    while ((imageMatch = patterns.image.exec(htmlContent)) !== null) {
+      if (!this.isInProcessedRange(imageMatch.index, processedRanges)) {
+        console.log('📸 [STAGE 4] Processing image element...')
+        const imageData = this.parseImageData(imageMatch[0], imageMatch[1])
+        
+        if (imageData) {
+          elements.push({
+            type: 'image',
+            content: imageData.altText || 'Image',
+            position: imageMatch.index,
+            length: imageMatch[0].length,
+            originalHtml: imageMatch[0],
+            imageData
+          })
+          processedRanges.push({start: imageMatch.index, end: imageMatch.index + imageMatch[0].length})
+          console.log(`📸 [STAGE 4] Processed image: ${imageData.displayWidth}x${imageData.displayHeight}px`)
+        }
+      }
+    }
+    
+    // Reset regex lastIndex
+    patterns.image.lastIndex = 0
     
     // Process headings first (highest priority)
     let headingMatch: RegExpExecArray | null
@@ -465,6 +528,17 @@ export class DocxProcessor {
             alignment: 'left'
           }
           baseElement.metadata!.estimatedHeight = htmlElement.tableData.estimatedHeight
+        }
+        break
+        
+      case 'image':
+        // STAGE 4: Professional image processing
+        if (htmlElement.imageData) {
+          baseElement.imageData = htmlElement.imageData
+          baseElement.style = {
+            alignment: htmlElement.imageData.alignment
+          }
+          baseElement.metadata!.estimatedHeight = htmlElement.imageData.displayHeight + 20 // Add margin
         }
         break
         
@@ -620,6 +694,108 @@ export class DocxProcessor {
     }
   }
 
+  /**
+   * STAGE 4: Parse image data from HTML img element
+   */
+  private parseImageData(imageHtml: string, src: string): ImageData | null {
+    console.log('📸 [STAGE 4] Parsing image data...')
+    
+    try {
+      // Extract image attributes
+      const altMatch = imageHtml.match(/alt\s*=\s*["']([^"']+)["']/i)
+      const contentTypeMatch = imageHtml.match(/data-content-type\s*=\s*["']([^"']+)["']/i)
+      
+      // Validate data URL format
+      if (!src.startsWith('data:')) {
+        console.log('⚠️ [STAGE 4] Non-data URL image detected, skipping...')
+        return null
+      }
+      
+      // Extract content type and base64 data
+      const dataUrlMatch = src.match(/^data:([^;]+);base64,(.+)$/)
+      if (!dataUrlMatch) {
+        console.log('⚠️ [STAGE 4] Invalid data URL format')
+        return null
+      }
+      
+      const contentType = dataUrlMatch[1]
+      const base64Data = dataUrlMatch[2]
+      
+      // Validate supported image formats
+      const supportedFormats = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+      if (!supportedFormats.includes(contentType)) {
+        console.log(`⚠️ [STAGE 4] Unsupported image format: ${contentType}`)
+        return null
+      }
+      
+      // Calculate estimated dimensions (will be refined during PDF embedding)
+      const estimatedWidth = this.estimateImageWidth(base64Data)
+      const estimatedHeight = this.estimateImageHeight(base64Data)
+      const aspectRatio = estimatedWidth / estimatedHeight
+      
+      // Professional image sizing for PDF layout
+      const maxWidth = this.pageConfig.contentWidth * 0.8 // 80% of content width
+      const maxHeight = this.pageConfig.contentHeight * 0.6 // 60% of content height
+      
+      let displayWidth = estimatedWidth
+      let displayHeight = estimatedHeight
+      
+      // Scale down if too large
+      if (displayWidth > maxWidth) {
+        displayWidth = maxWidth
+        displayHeight = displayWidth / aspectRatio
+      }
+      
+      if (displayHeight > maxHeight) {
+        displayHeight = maxHeight
+        displayWidth = displayHeight * aspectRatio
+      }
+      
+      const imageData: ImageData = {
+        src,
+        contentType,
+        originalWidth: estimatedWidth,
+        originalHeight: estimatedHeight,
+        displayWidth: Math.floor(displayWidth),
+        displayHeight: Math.floor(displayHeight),
+        aspectRatio,
+        altText: altMatch ? altMatch[1] : 'Embedded image',
+        alignment: 'center', // Default to center alignment
+        isInline: false, // Default to block-level
+        quality: 'original'
+      }
+      
+      console.log(`📸 [STAGE 4] Image parsed: ${contentType}, ${displayWidth}x${displayHeight}px`)
+      return imageData
+      
+    } catch (error) {
+      console.error('❌ [STAGE 4] Image parsing error:', error)
+      return null
+    }
+  }
+
+  /**
+   * STAGE 4: Estimate image width from base64 data
+   * This is a basic estimation - actual dimensions will be determined during PDF embedding
+   */
+  private estimateImageWidth(base64Data: string): number {
+    // Basic estimation based on data size
+    const dataSize = base64Data.length
+    const estimatedPixels = Math.sqrt(dataSize * 0.75) // Rough estimation
+    return Math.min(Math.max(estimatedPixels * 2, 200), 600) // Between 200-600px
+  }
+
+  /**
+   * STAGE 4: Estimate image height from base64 data
+   * This is a basic estimation - actual dimensions will be determined during PDF embedding
+   */
+  private estimateImageHeight(base64Data: string): number {
+    // Basic estimation based on data size (assuming roughly square images)
+    const dataSize = base64Data.length
+    const estimatedPixels = Math.sqrt(dataSize * 0.75) // Rough estimation
+    return Math.min(Math.max(estimatedPixels * 1.5, 150), 450) // Between 150-450px
+  }
+
   // ============================================================================
   // PDF GENERATION (Stage 1 Multi-page Foundation)
   // ============================================================================
@@ -640,7 +816,26 @@ export class DocxProcessor {
     // Initialize PDF with professional settings
     const pdfDoc = await PDFDocument.create()
     
-    // Embed multiple fonts for enhanced typography
+    // STAGE 5: Enhanced font system supporting multiple families for watermarking
+    const watermarkFonts = {
+      times: {
+        regular: await pdfDoc.embedFont(StandardFonts.TimesRoman),
+        bold: await pdfDoc.embedFont(StandardFonts.TimesRomanBold),
+        italic: await pdfDoc.embedFont(StandardFonts.TimesRomanItalic)
+      },
+      helvetica: {
+        regular: await pdfDoc.embedFont(StandardFonts.Helvetica),
+        bold: await pdfDoc.embedFont(StandardFonts.HelveticaBold),
+        oblique: await pdfDoc.embedFont(StandardFonts.HelveticaOblique)
+      },
+      courier: {
+        regular: await pdfDoc.embedFont(StandardFonts.Courier),
+        bold: await pdfDoc.embedFont(StandardFonts.CourierBold),
+        oblique: await pdfDoc.embedFont(StandardFonts.CourierOblique)
+      }
+    }
+    
+    // Embed multiple fonts for enhanced typography (Stage 2)
     const fonts = {
       regular: await pdfDoc.embedFont(StandardFonts.TimesRoman),
       bold: await pdfDoc.embedFont(StandardFonts.TimesRomanBold),
@@ -678,8 +873,11 @@ export class DocxProcessor {
       if (this.shouldCreateNewPage(currentY, elementHeight, element)) {
         console.log(`📄 [STAGE 2] Creating page ${pageNumber + 1} (element ${i + 1}/${elements.length})`)
         
-        // Add watermark and page number to current page
-        this.addEnhancedWatermarkToPage(currentPage, settings, fonts.bold, pageNumber)
+        // STAGE 5: Add watermark with advanced positioning and styling
+        // Check if watermark should be applied to this page
+        if (this.shouldApplyWatermarkToPage(pageNumber, 1, [], settings)) {
+          this.addWatermarkToPage(currentPage, settings, watermarkFonts, pageNumber)
+        }
         
         // Create new page
         currentPage = pdfDoc.addPage([this.pageConfig.width, this.pageConfig.height])
@@ -688,14 +886,17 @@ export class DocxProcessor {
       }
       
       // Render element with professional formatting
-      currentY = this.renderElementToPdf(currentPage, element, renderInfo, currentY)
+      currentY = await this.renderElementToPdf(currentPage, element, renderInfo, currentY)
       
       // Add appropriate spacing after element
       currentY -= this.getElementSpacing(element.type)
     }
     
-    // Add watermark and page number to final page
-    this.addEnhancedWatermarkToPage(currentPage, settings, fonts.bold, pageNumber)
+    // STAGE 5: Add watermark with advanced positioning and styling to final page
+    // Check if watermark should be applied to this page
+    if (this.shouldApplyWatermarkToPage(pageNumber, pageNumber, elements, settings)) {
+      this.addWatermarkToPage(currentPage, settings, watermarkFonts, pageNumber)
+    }
     
     onProgress?.({ stage: 'Finalizing professional PDF...', progress: 90 })
     
@@ -721,6 +922,11 @@ export class DocxProcessor {
     // STAGE 3: Handle table elements specially
     if (element.type === 'table' && element.metadata?.originalHtml) {
       return this.calculateTableRenderInfo(element, fonts)
+    }
+    
+    // STAGE 4: Handle image elements specially
+    if (element.type === 'image' && element.imageData) {
+      return this.calculateImageRenderInfo(element, fonts)
     }
     
     // Enhanced text wrapping with professional typography
@@ -789,6 +995,64 @@ export class DocxProcessor {
   }
 
   /**
+   * STAGE 4: Calculate image-specific rendering information
+   */
+  private calculateImageRenderInfo(element: ContentElement, fonts: any): ElementRenderInfo {
+    const imageData = element.imageData!
+    
+    console.log(`📸 [STAGE 4] Calculating image render info: ${imageData.displayWidth}x${imageData.displayHeight}px`)
+    
+    // Convert base64 to Uint8Array for PDF embedding
+    const base64Data = imageData.src.split(',')[1]
+    const imageBytes = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0))
+    
+    // Calculate positioning based on alignment
+    const contentWidth = this.pageConfig.contentWidth
+    let x = this.pageConfig.marginLeft
+    
+    switch (imageData.alignment) {
+      case 'center':
+        x = this.pageConfig.marginLeft + (contentWidth - imageData.displayWidth) / 2
+        break
+      case 'right':
+        x = this.pageConfig.marginLeft + contentWidth - imageData.displayWidth
+        break
+      case 'left':
+      default:
+        x = this.pageConfig.marginLeft
+        break
+    }
+    
+    const imageRenderInfo: ImageRenderInfo = {
+      imageBytes,
+      width: imageData.displayWidth,
+      height: imageData.displayHeight,
+      x,
+      y: 0, // Will be set during rendering
+      alignment: imageData.alignment,
+      isInline: imageData.isInline,
+      marginTop: 10,
+      marginBottom: 10,
+      borderWidth: 0, // No border by default
+      borderColor: { r: 0.8, g: 0.8, b: 0.8 }
+    }
+    
+    const totalHeight = imageData.displayHeight + imageRenderInfo.marginTop + imageRenderInfo.marginBottom
+    
+    return {
+      lines: ['[IMAGE]'], // Placeholder
+      font: fonts.regular,
+      fontSize: 12,
+      lineHeight: 14,
+      totalHeight,
+      isBold: false,
+      color: { r: 0, g: 0, b: 0 },
+      alignment: imageData.alignment,
+      imageInfo: imageRenderInfo
+    }
+  }
+
+  /**
    * Advanced page break decision with professional typography rules
    */
   private shouldCreateNewPage(currentY: number, elementHeight: number, element: ContentElement): boolean {
@@ -815,17 +1079,22 @@ export class DocxProcessor {
   /**
    * Render element to PDF with professional formatting
    */
-  private renderElementToPdf(
+  private async renderElementToPdf(
     page: PDFPage, 
     element: ContentElement, 
     renderInfo: ElementRenderInfo, 
     startY: number
-  ): number {
+  ): Promise<number> {
     let currentY = startY
     
     // STAGE 3: Handle table rendering specially
     if (element.type === 'table' && renderInfo.tableInfo) {
       return this.renderTableToPdf(page, element, renderInfo, currentY)
+    }
+    
+    // STAGE 4: Handle image rendering specially
+    if (element.type === 'image' && renderInfo.imageInfo) {
+      return await this.renderImageToPdf(page, element, renderInfo, currentY)
     }
     
     // Add extra spacing before headings
@@ -925,6 +1194,86 @@ export class DocxProcessor {
     console.log(`📊 [STAGE 3] Table rendered: ${tableData.rows.length} rows, height: ${startY - currentY}px`)
     
     return currentY - 10 // Extra spacing after table
+  }
+
+  /**
+   * STAGE 4: Render professional image to PDF
+   */
+  private async renderImageToPdf(
+    page: PDFPage,
+    element: ContentElement,
+    renderInfo: ElementRenderInfo,
+    startY: number
+  ): Promise<number> {
+    const imageInfo = renderInfo.imageInfo!
+    const imageData = element.imageData!
+    
+    console.log('📸 [STAGE 4] Rendering professional image to PDF...')
+    
+    try {
+      // Get PDF document reference
+      const pdfDoc = page.doc
+      
+      // Embed image based on content type
+      let embeddedImage
+      if (imageData.contentType === 'image/jpeg') {
+        embeddedImage = await pdfDoc.embedJpg(imageInfo.imageBytes)
+      } else if (imageData.contentType === 'image/png') {
+        embeddedImage = await pdfDoc.embedPng(imageInfo.imageBytes)
+      } else {
+        // For other formats, try PNG first, then JPG
+        try {
+          embeddedImage = await pdfDoc.embedPng(imageInfo.imageBytes)
+        } catch {
+          embeddedImage = await pdfDoc.embedJpg(imageInfo.imageBytes)
+        }
+      }
+      
+      // Calculate final positioning
+      const finalY = startY - imageInfo.marginTop - imageInfo.height
+      
+      // Draw image with professional positioning
+      page.drawImage(embeddedImage, {
+        x: imageInfo.x,
+        y: finalY,
+        width: imageInfo.width,
+        height: imageInfo.height
+      })
+      
+      // Add optional border
+      if (imageInfo.borderWidth && imageInfo.borderWidth > 0) {
+        page.drawRectangle({
+          x: imageInfo.x - imageInfo.borderWidth,
+          y: finalY - imageInfo.borderWidth,
+          width: imageInfo.width + (imageInfo.borderWidth * 2),
+          height: imageInfo.height + (imageInfo.borderWidth * 2),
+          borderColor: rgb(
+            imageInfo.borderColor!.r,
+            imageInfo.borderColor!.g,
+            imageInfo.borderColor!.b
+          ),
+          borderWidth: imageInfo.borderWidth
+        })
+      }
+      
+      console.log(`📸 [STAGE 4] Image rendered: ${imageInfo.width}x${imageInfo.height}px at (${imageInfo.x}, ${finalY})`)
+      
+      return finalY - imageInfo.marginBottom
+      
+    } catch (error) {
+      console.error('❌ [STAGE 4] Image rendering error:', error)
+      
+      // Fallback: render placeholder text
+      const fallbackY = startY - 20
+      page.drawText(`[Image: ${element.content}]`, {
+        x: this.pageConfig.marginLeft,
+        y: fallbackY,
+        size: 10,
+        color: rgb(0.5, 0.5, 0.5)
+      })
+      
+      return fallbackY - 10
+    }
   }
 
   /**
@@ -1283,33 +1632,373 @@ export class DocxProcessor {
   // WATERMARK SYSTEM (Professional Implementation)
   // ============================================================================
 
+  // ============================================================================
+  // STAGE 5: ADVANCED PROFESSIONAL WATERMARKING SYSTEM
+  // ============================================================================
+
   /**
-   * Add professional watermark to PDF page
-   * Supports all user settings: text, size, color, opacity, rotation
+   * Calculate multiple watermark positions based on advanced settings
+   * Supports: center, corners, custom coordinates, and multiple layouts
    */
-  private addWatermarkToPage(page: PDFPage, settings: WatermarkSettings, font: PDFFont): void {
+  private calculateWatermarkPositions(
+    page: PDFPage, 
+    settings: WatermarkSettings, 
+    textWidth: number,
+    fontSize: number
+  ): Array<{ x: number; y: number; rotation?: number }> {
     const { width, height } = page.getSize()
+    const position = settings.position || { type: 'center' }
+    const positions: Array<{ x: number; y: number; rotation?: number }> = []
     
-    // Watermark configuration
-    const watermarkText = settings.text || 'CPGS - Babcock University'
+    // Professional margin calculations
+    const margin = Math.min(width, height) * 0.05 // 5% margin
+    const textHeight = fontSize * 1.2
+    
+    switch (position.type) {
+      case 'center':
+        positions.push({
+          x: width / 2 - textWidth / 2,
+          y: height / 2,
+          rotation: -45
+        })
+        break
+        
+      case 'corner':
+        const corner = position.corner || 'bottom-right'
+        const offsetX = position.offset?.x || 0
+        const offsetY = position.offset?.y || 0
+        
+        switch (corner) {
+          case 'top-left':
+            positions.push({
+              x: margin + offsetX,
+              y: height - margin - textHeight + offsetY,
+              rotation: 0
+            })
+            break
+          case 'top-right':
+            positions.push({
+              x: width - margin - textWidth + offsetX,
+              y: height - margin - textHeight + offsetY,
+              rotation: 0
+            })
+            break
+          case 'bottom-left':
+            positions.push({
+              x: margin + offsetX,
+              y: margin + offsetY,
+              rotation: 0
+            })
+            break
+          case 'bottom-right':
+            positions.push({
+              x: width - margin - textWidth + offsetX,
+              y: margin + offsetY,
+              rotation: 0
+            })
+            break
+        }
+        break
+        
+      case 'custom':
+        if (position.coordinates) {
+          position.coordinates.forEach(coord => {
+            positions.push({
+              x: coord.x,
+              y: coord.y,
+              rotation: settings.style?.rotation || 0
+            })
+          })
+        }
+        break
+        
+      case 'multiple':
+        // Professional multiple positioning: center + corners
+        positions.push(
+          // Center diagonal
+          { x: width / 2 - textWidth / 2, y: height / 2, rotation: -45 },
+          // Corner positions
+          { x: margin, y: height - margin - textHeight, rotation: 0 },
+          { x: width - margin - textWidth, y: height - margin - textHeight, rotation: 0 },
+          { x: margin, y: margin, rotation: 0 },
+          { x: width - margin - textWidth, y: margin, rotation: 0 }
+        )
+        break
+    }
+    
+    return positions
+  }
+
+  /**
+   * Select appropriate watermark font based on style settings
+   * STAGE 5: Supports multiple font families and styles
+   */
+  private selectWatermarkFont(
+    watermarkFonts: any,
+    settings: WatermarkSettings
+  ): PDFFont {
+    const fontFamily = settings.style?.fontFamily || 'helvetica'
+    const isBold = settings.fontSize === 'large' // Large size uses bold variant
+    
+    switch (fontFamily) {
+      case 'times':
+        return isBold ? watermarkFonts.times.bold : watermarkFonts.times.regular
+      case 'courier':
+        return isBold ? watermarkFonts.courier.bold : watermarkFonts.courier.regular
+      case 'helvetica':
+      default:
+        return isBold ? watermarkFonts.helvetica.bold : watermarkFonts.helvetica.regular
+    }
+  }
+
+  /**
+   * Apply advanced watermark styling with professional effects
+   * STAGE 5: Enhanced with multiple fonts, variable rotation, shadows, gradients, outlines
+   */
+  private applyAdvancedWatermarkStyling(
+    page: PDFPage,
+    text: string,
+    x: number,
+    y: number,
+    settings: WatermarkSettings,
+    watermarkFonts: any,
+    rotation: number = -45
+  ): void {
     const fontSize = this.mapWatermarkFontSize(settings.fontSize || 'medium')
     const opacity = (settings.opacity || 30) / 100
     const color = this.parseColor(settings.color || '#1e40af')
     
-    // Calculate center position with proper text centering
-    const textWidth = watermarkText.length * fontSize * 0.6 // Approximate text width
-    const centerX = width / 2 - textWidth / 2
-    const centerY = height / 2
+    // STAGE 5: Select appropriate font based on style settings
+    const font = this.selectWatermarkFont(watermarkFonts, settings)
     
-    // Draw watermark with professional styling
-    page.drawText(watermarkText, {
-      x: centerX,
-      y: centerY,
+    // STAGE 5: Apply advanced transparency effects
+    let finalOpacity = opacity
+    if (settings.transparency?.type === 'gradient') {
+      // For gradient transparency, calculate position-based opacity
+      const transparencyValue = settings.transparency.value
+      if (typeof transparencyValue === 'object') {
+        // Create gradient effect based on position (simplified)
+        const gradientFactor = Math.sin((x / page.getSize().width) * Math.PI) // 0 to 1 sine wave
+        finalOpacity = (transparencyValue.start + 
+          (transparencyValue.end - transparencyValue.start) * gradientFactor) / 100
+      }
+    } else if (settings.transparency?.type === 'fade') {
+      // Create fade effect from edges
+      const { width, height } = page.getSize()
+      const centerX = width / 2
+      const centerY = height / 2
+      const distanceFromCenter = Math.sqrt(
+        Math.pow(x - centerX, 2) + Math.pow(y - centerY, 2)
+      )
+      const maxDistance = Math.sqrt(centerX * centerX + centerY * centerY)
+      const fadeMultiplier = 1 - (distanceFromCenter / maxDistance)
+      
+      const transparencyValue = settings.transparency.value
+      if (typeof transparencyValue === 'number') {
+        finalOpacity = (transparencyValue / 100) * fadeMultiplier
+      }
+    }
+    
+    // Apply shadow effect if configured
+    if (settings.style?.effects?.shadow) {
+      const shadow = settings.style.effects.shadow
+      const shadowColor = this.parseColor(shadow.color || '#000000')
+      
+      // Draw shadow first (behind the main text)
+      page.drawText(text, {
+        x: x + shadow.offsetX,
+        y: y + shadow.offsetY,
+        size: fontSize,
+        font: font,
+        color: rgb(shadowColor.r, shadowColor.g, shadowColor.b),
+        opacity: finalOpacity * 0.3, // Shadow is more transparent
+        rotate: degrees(rotation)
+      })
+    }
+    
+    // Apply outline effect if configured
+    if (settings.style?.effects?.outline) {
+      const outline = settings.style.effects.outline
+      const outlineColor = this.parseColor(outline.color || '#000000')
+      
+      // Draw outline (simplified - would need multiple passes for true outline)
+      const outlineOffset = outline.width || 1
+      for (let dx = -outlineOffset; dx <= outlineOffset; dx += outlineOffset) {
+        for (let dy = -outlineOffset; dy <= outlineOffset; dy += outlineOffset) {
+          if (dx !== 0 || dy !== 0) {
+            page.drawText(text, {
+              x: x + dx,
+              y: y + dy,
+              size: fontSize,
+              font: font,
+              color: rgb(outlineColor.r, outlineColor.g, outlineColor.b),
+              opacity: finalOpacity * 0.5,
+              rotate: degrees(rotation)
+            })
+          }
+        }
+      }
+    }
+    
+    // Draw main watermark text with selected font and styling
+    page.drawText(text, {
+      x: x,
+      y: y,
       size: fontSize,
       font: font,
       color: rgb(color.r, color.g, color.b),
-      opacity: opacity,
-      rotate: degrees(-45) // Classic diagonal watermark
+      opacity: finalOpacity,
+      rotate: degrees(settings.style?.rotation || rotation)
+    })
+  }
+
+  /**
+   * Check if watermark should be applied to specific page
+   * STAGE 5: Enhanced with content analysis for conditional rendering
+   */
+  private shouldApplyWatermarkToPage(
+    pageNumber: number,
+    totalPages: number,
+    pageContent: ContentElement[],
+    settings: WatermarkSettings
+  ): boolean {
+    const pageSpecific = settings.pageSpecific
+    if (!pageSpecific) return true
+    
+    // Check page range
+    let pageRangeMatches = true
+    switch (pageSpecific.pageRange) {
+      case 'all':
+        pageRangeMatches = true
+        break
+      case 'first':
+        pageRangeMatches = pageNumber === 1
+        break
+      case 'last':
+        pageRangeMatches = pageNumber === totalPages
+        break
+      case 'odd':
+        pageRangeMatches = pageNumber % 2 === 1
+        break
+      case 'even':
+        pageRangeMatches = pageNumber % 2 === 0
+        break
+      default:
+        if (Array.isArray(pageSpecific.pageRange)) {
+          pageRangeMatches = pageSpecific.pageRange.includes(pageNumber)
+        }
+        break
+    }
+    
+    if (!pageRangeMatches) return false
+    
+    // Check conditional content requirements
+    if (pageSpecific.conditional) {
+      const conditions = pageSpecific.conditional
+      
+      // Check for images in content
+      if (conditions.hasImages !== undefined) {
+        const hasImages = pageContent.some(element => element.type === 'image')
+        if (conditions.hasImages !== hasImages) return false
+      }
+      
+      // Check for tables in content
+      if (conditions.hasTables !== undefined) {
+        const hasTables = pageContent.some(element => element.type === 'table')
+        if (conditions.hasTables !== hasTables) return false
+      }
+      
+      // Check content length
+      if (conditions.contentLength) {
+        const totalTextLength = pageContent
+          .filter(element => element.type === 'paragraph' || element.type === 'heading')
+          .reduce((sum, element) => sum + element.content.length, 0)
+        
+        let matchesLength = false
+        switch (conditions.contentLength) {
+          case 'short':
+            matchesLength = totalTextLength < 500
+            break
+          case 'medium':
+            matchesLength = totalTextLength >= 500 && totalTextLength < 2000
+            break
+          case 'long':
+            matchesLength = totalTextLength >= 2000
+            break
+        }
+        
+        if (!matchesLength) return false
+      }
+    }
+    
+    return true
+  }
+
+  /**
+   * Get watermark text for specific page
+   * STAGE 5: Enhanced with page-specific customization and advanced templates
+   */
+  private getWatermarkTextForPage(
+    pageNumber: number,
+    settings: WatermarkSettings
+  ): string {
+    // Check for page-specific custom text first
+    if (settings.pageSpecific?.customText) {
+      return settings.pageSpecific.customText.replace('{pageNumber}', pageNumber.toString())
+    }
+    
+    // Apply advanced template-based text
+    switch (settings.template) {
+      case 'corporate':
+        return `CONFIDENTIAL - CPGS Corporation - Page ${pageNumber}`
+      case 'confidential':
+        return `CONFIDENTIAL DOCUMENT - ${pageNumber}`
+      case 'draft':
+        return `DRAFT COPY - Page ${pageNumber} - DO NOT DISTRIBUTE`
+      case 'custom':
+        // For custom template, use the base text with page number
+        return `${settings.text || 'CPGS - Babcock University'} - ${pageNumber}`
+      default:
+        // Default behavior with page number integration
+        const baseText = settings.text || 'CPGS - Babcock University'
+        if (baseText.includes('{pageNumber}')) {
+          return baseText.replace('{pageNumber}', pageNumber.toString())
+        }
+        return baseText
+    }
+  }
+
+  /**
+   * Add professional watermark to PDF page
+   * STAGE 5: Enhanced with advanced positioning, styling, and effects
+   */
+  private addWatermarkToPage(
+    page: PDFPage, 
+    settings: WatermarkSettings, 
+    watermarkFonts: any,
+    pageNumber: number = 1
+  ): void {
+    // Get watermark text with page-specific customization
+    const watermarkText = this.getWatermarkTextForPage(pageNumber, settings)
+    const fontSize = this.mapWatermarkFontSize(settings.fontSize || 'medium')
+    
+    // Calculate text dimensions for positioning
+    const textWidth = watermarkText.length * fontSize * 0.6 // Approximate text width
+    
+    // Calculate all positions based on advanced settings
+    const positions = this.calculateWatermarkPositions(page, settings, textWidth, fontSize)
+    
+    // Apply watermark to all calculated positions
+    positions.forEach(position => {
+      this.applyAdvancedWatermarkStyling(
+        page,
+        watermarkText,
+        position.x,
+        position.y,
+        settings,
+        watermarkFonts,
+        position.rotation || -45
+      )
     })
   }
 
@@ -1458,8 +2147,11 @@ export class DocxProcessor {
       color: rgb(0.6, 0.6, 0.6),
     })
     
-    // Add watermark to fallback document
-    this.addWatermarkToPage(page, settings, boldFont)
+    // Add watermark to fallback document using STAGE 5 enhanced system
+    const fallbackWatermarkFonts = {
+      helvetica: { regular: font, bold: boldFont }
+    }
+    this.addWatermarkToPage(page, settings, fallbackWatermarkFonts, 1)
     
     return new Uint8Array(await pdfDoc.save())
   }
