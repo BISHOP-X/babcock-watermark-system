@@ -2,6 +2,7 @@ import { pdfProcessor } from './pdfProcessor'
 import { apiService, WatermarkSettings, FileData } from './api'
 import { supabase } from './supabase'
 import { v4 as uuidv4 } from 'uuid'
+import { docxProcessor as enterpriseDocxProcessor } from './docxProcessor'
 
 export class FileProcessorService {
   async processFile(file: FileData, watermarkSettings: WatermarkSettings): Promise<void> {
@@ -30,8 +31,19 @@ export class FileProcessorService {
         file.mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
         file.mimeType === 'application/msword'
       ) {
-        console.log('🔄 Processing DOCX file:', file.originalName)
-        processedBuffer = await docxProcessor.addWatermark(buffer, watermarkSettings)
+        console.log('🔄 Processing DOCX file with enterprise processor:', file.originalName)
+        
+        // Use enterprise DocxProcessor with progress callback
+        processedBuffer = await enterpriseDocxProcessor.addWatermark(
+          buffer, 
+          watermarkSettings,
+          (progress) => {
+            // Update file progress (25% base + 50% processing range)
+            const adjustedProgress = 25 + (progress.progress * 0.5)
+            apiService.updateFileStatus(file.id, 'processing', adjustedProgress)
+              .catch(err => console.warn('Progress update failed:', err))
+          }
+        )
       } else {
         throw new Error(`Unsupported file type: ${file.mimeType}`)
       }
@@ -170,13 +182,5 @@ export class FileProcessorService {
 
 export const fileProcessor = new FileProcessorService()
 
-export class DocxProcessorService {
-  async addWatermark(buffer: ArrayBuffer, watermarkSettings: WatermarkSettings): Promise<Uint8Array> {
-    // TODO: Implement DOCX watermark processing
-    // For now, return the original buffer as Uint8Array
-    console.warn('DOCX watermark processing not yet implemented')
-    return new Uint8Array(buffer)
-  }
-}
-
-export const docxProcessor = new DocxProcessorService()
+// Note: DocxProcessor is now imported from './docxProcessor' as enterpriseDocxProcessor
+// The enterprise implementation provides full Stage 6 performance optimization
