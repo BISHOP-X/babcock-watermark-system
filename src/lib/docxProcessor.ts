@@ -2906,7 +2906,7 @@ export class DocxProcessor {
     let paragraphMatch: RegExpExecArray | null
     while ((paragraphMatch = patterns.paragraph.exec(htmlContent)) !== null) {
       if (!this.isInProcessedRange(paragraphMatch.index, processedRanges)) {
-        const content = this.cleanHtmlContent(paragraphMatch[2])
+        const content = this.cleanHtmlContent(paragraphMatch[1] || '') // Use [1] instead of [2]
         
         if (content.trim()) {
           elements.push({
@@ -3104,6 +3104,11 @@ export class DocxProcessor {
    * Clean HTML content while preserving important formatting
    */
   private cleanHtmlContent(html: string): string {
+    // Safety check for undefined/null input
+    if (!html || typeof html !== 'string') {
+      return ''
+    }
+    
     return html
       .replace(/<strong[^>]*>(.*?)<\/strong>/gi, '**$1**')  // Preserve bold markers
       .replace(/<b[^>]*>(.*?)<\/b>/gi, '**$1**')
