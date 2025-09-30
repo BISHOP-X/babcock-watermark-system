@@ -40,29 +40,29 @@ export const RecentActivity = ({ activities }: RecentActivityProps) => {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3 sm:space-y-4">
       {activities.map((activity, index) => (
         <div 
           key={activity.id} 
-          className={`p-4 rounded-lg border ${getStatusBg(activity.status)} hover:shadow-sm transition-all duration-200 animate-fade-in`}
+          className={`p-4 sm:p-5 rounded-lg border ${getStatusBg(activity.status)} hover:shadow-sm transition-all duration-200 animate-fade-in touch-manipulation`}
           style={{ animationDelay: `${index * 100}ms` }}
         >
-          <div className="flex items-start gap-3">
-            <div className="flex-shrink-0 mt-0.5">
+          <div className="flex items-start gap-3 sm:gap-4">
+            <div className="flex-shrink-0 mt-1">
               {getStatusIcon(activity.status)}
             </div>
             
             <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between">
-                <h4 className="text-sm font-medium text-foreground truncate">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2">
+                <h4 className="text-sm sm:text-base font-medium text-foreground leading-tight">
                   {activity.action}
                 </h4>
-                <time className="text-xs text-muted-foreground flex-shrink-0 ml-2">
+                <time className="text-xs sm:text-sm text-muted-foreground flex-shrink-0 font-medium">
                   {activity.time}
                 </time>
               </div>
               
-              <p className="text-sm text-muted-foreground mt-1">
+              <p className="text-sm sm:text-base text-muted-foreground mt-2 leading-relaxed">
                 {activity.description}
               </p>
             </div>

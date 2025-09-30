@@ -21,9 +21,9 @@ const App = () => (
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/upload" element={<FileUpload />} />
-          <Route path="/configure" element={<WatermarkConfig />} />
-          <Route path="/processing" element={<Processing />} />
-          <Route path="/results" element={<Results />} />
+          <Route path="/watermark-config/:batchId" element={<WatermarkConfig />} />
+          <Route path="/processing/:batchId" element={<Processing />} />
+          <Route path="/results/:batchId" element={<Results />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

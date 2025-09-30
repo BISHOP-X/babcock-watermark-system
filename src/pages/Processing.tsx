@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
-import { Play, Pause, X, CheckCircle2, AlertCircle, FileText, Download } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Play, Pause, X, CheckCircle2, AlertCircle, FileText, Download, User, Users } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -9,6 +9,8 @@ import { Header } from "@/components/Header";
 import { ProcessingItem } from "@/components/ProcessingItem";
 import { ConfirmationModal } from "@/components/ConfirmationModal";
 import { useToast } from "@/hooks/use-toast";
+import { fileProcessor } from "@/lib/fileProcessor";
+import { apiService, FileData } from "@/lib/api";
 
 interface ProcessingFile {
   id: string;
@@ -21,24 +23,31 @@ interface ProcessingFile {
 
 const Processing = () => {
   const navigate = useNavigate();
-  const location = useLocation();
+  const { batchId } = useParams<{ batchId: string }>();
+  const [searchParams] = useSearchParams();
   const { toast } = useToast();
   
-  // Get data from previous steps
-  const uploadedFiles = location.state?.files || [];
-  const watermarkSettings = location.state?.watermarkSettings || {};
+  // Check if this is single file mode
+  const isSingleMode = searchParams.get('mode') === 'single';
+  
+  // State for batch data loaded from API
+  const [batchData, setBatchData] = useState<any>(null);
+  const [watermarkSettings, setWatermarkSettings] = useState<any>({});
   
   const [files, setFiles] = useState<ProcessingFile[]>([]);
   const [overallProgress, setOverallProgress] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
-  const [currentFileIndex, setCurrentFileIndex] = useState(0);
+  const [batchStatus, setBatchStatus] = useState<string>('pending');
+  
+  // Use ref to track processing state across async operations
+  const processingStateRef = useRef({ isPaused: false, shouldStop: false });
 
   useEffect(() => {
-    if (uploadedFiles.length === 0) {
+    if (!batchId) {
       toast({
-        title: "No files to process",
+        title: "Invalid batch ID",
         description: "Please upload and configure files first.",
         variant: "destructive",
       });
@@ -46,105 +55,216 @@ const Processing = () => {
       return;
     }
 
-    // Initialize processing files
-    const processingFiles: ProcessingFile[] = uploadedFiles.map((file: any, index: number) => ({
-      id: file.id || `file-${index}`,
-      name: file.name || `Document ${index + 1}`,
-      size: file.size || 0,
-      status: 'queued',
-      progress: 0
-    }));
+    loadBatchDataAndInitialize();
+  }, [batchId, navigate, toast]);
 
-    setFiles(processingFiles);
-    startProcessing(processingFiles);
-  }, [uploadedFiles, navigate, toast]);
-
-  const startProcessing = async (processingFiles: ProcessingFile[]) => {
-    setIsProcessing(true);
-    
-    for (let i = 0; i < processingFiles.length; i++) {
-      if (isPaused) break;
+  const loadBatchDataAndInitialize = async () => {
+    try {
+      // Load batch data from API
+      const batch = await apiService.getBatch(batchId);
+      setBatchData(batch);
+      setWatermarkSettings(batch.watermarkSettings || {});
       
-      setCurrentFileIndex(i);
-      
-      // Update file status to processing
-      setFiles(prev => prev.map((file, index) => 
-        index === i ? { ...file, status: 'processing', progress: 0 } : file
-      ));
-
-      // Simulate processing with progress updates
-      for (let progress = 0; progress <= 100; progress += 10) {
-        if (isPaused) break;
-        
-        await new Promise(resolve => setTimeout(resolve, 150));
-        
-        setFiles(prev => prev.map((file, index) => 
-          index === i ? { ...file, progress } : file
-        ));
-      }
-
-      // Randomly simulate some failures for realism
-      const shouldFail = Math.random() < 0.1; // 10% chance of failure
-      
-      setFiles(prev => prev.map((file, index) => 
-        index === i ? {
-          ...file,
-          status: shouldFail ? 'failed' : 'completed',
-          progress: 100,
-          error: shouldFail ? 'Watermarking failed - file may be corrupted' : undefined
-        } : file
-      ));
-
-      // Update overall progress
-      const completedFiles = i + 1;
-      const newOverallProgress = (completedFiles / processingFiles.length) * 100;
-      setOverallProgress(newOverallProgress);
+      // Initialize processing with loaded data
+      await initializeBatchProcessing();
+    } catch (error) {
+      console.error('Failed to load batch data:', error);
+      toast({
+        title: "Failed to load batch",
+        description: "Could not load batch information. Please try again.",
+        variant: "destructive",
+      });
+      navigate('/upload');
     }
+  };
 
-    if (!isPaused) {
-      setIsProcessing(false);
+  const initializeBatchProcessing = async () => {
+    try {
+      // Load batch files from database
+      const batchFiles = await apiService.getBatchFiles(batchId);
       
-      // Check results and navigate
+      // Initialize processing state
+      const processingFiles: ProcessingFile[] = batchFiles.map((file: FileData) => ({
+        id: file.id,
+        name: file.originalName,
+        size: file.fileSize,
+        status: file.status as 'queued' | 'processing' | 'completed' | 'failed',
+        progress: file.progress,
+        error: file.errorMessage
+      }));
+
+      setFiles(processingFiles);
+      
+      // Auto-start processing if batch is pending
+      const batch = await apiService.getBatch(batchId);
+      setBatchStatus(batch.status);
+      
+      if (batch.status === 'pending') {
+        startRealProcessing();
+      } else if (batch.status === 'processing') {
+        // Resume processing monitoring
+        monitorProcessingProgress();
+      }
+      
+    } catch (error) {
+      console.error('Failed to initialize batch processing:', error);
+      toast({
+        title: "Initialization failed",
+        description: "Failed to load batch data. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const startRealProcessing = async () => {
+    if (!batchId) return;
+    
+    setIsProcessing(true);
+    processingStateRef.current = { isPaused: false, shouldStop: false };
+    
+    try {
+      // Start batch processing in background
+      const processingPromise = fileProcessor.processBatch(batchId);
+      
+      // Monitor progress while processing
+      const progressMonitor = monitorProcessingProgress();
+      
+      // Wait for processing to complete
+      await processingPromise;
+      
+      // Stop progress monitoring
+      clearInterval(progressMonitor);
+      
+      // Final status check
+      await updateBatchStatus();
+      
+      toast({
+        title: "Processing completed!",
+        description: isSingleMode 
+          ? "Your document has been processed. Redirecting to download..." 
+          : "All files have been processed. Redirecting to results...",
+      });
+      
+      // Navigate to results after a brief delay
       setTimeout(() => {
-        navigate('/results', {
-          state: {
-            files: files,
-            watermarkSettings,
-            processedFiles: files.filter(f => f.status === 'completed').length,
-            failedFiles: files.filter(f => f.status === 'failed').length
-          }
-        });
-      }, 1000);
+        navigate(`/results/${batchId}${isSingleMode ? '?mode=single' : ''}`);
+      }, 2000);
+      
+    } catch (error) {
+      console.error('Batch processing failed:', error);
+      toast({
+        title: "Processing failed",
+        description: error instanceof Error ? error.message : "An error occurred during processing.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const monitorProcessingProgress = () => {
+    const intervalId = setInterval(async () => {
+      if (processingStateRef.current.shouldStop) {
+        clearInterval(intervalId);
+        return;
+      }
+      
+      try {
+        // Get updated batch and file status
+        const [batch, batchFiles] = await Promise.all([
+          apiService.getBatch(batchId),
+          apiService.getBatchFiles(batchId)
+        ]);
+        
+        setBatchStatus(batch.status);
+        
+        // Update file states
+        const updatedFiles: ProcessingFile[] = batchFiles.map((file: FileData) => ({
+          id: file.id,
+          name: file.originalName,
+          size: file.fileSize,
+          status: file.status as 'queued' | 'processing' | 'completed' | 'failed',
+          progress: file.progress,
+          error: file.errorMessage
+        }));
+        
+        setFiles(updatedFiles);
+        
+        // Calculate overall progress
+        const totalFiles = updatedFiles.length;
+        const completedFiles = updatedFiles.filter(f => f.status === 'completed' || f.status === 'failed').length;
+        const newProgress = totalFiles > 0 ? (completedFiles / totalFiles) * 100 : 0;
+        setOverallProgress(newProgress);
+        
+        // Stop monitoring if batch is complete
+        if (batch.status === 'completed' || batch.status === 'failed') {
+          clearInterval(intervalId);
+          setIsProcessing(false);
+        }
+        
+      } catch (error) {
+        console.error('Failed to update progress:', error);
+      }
+    }, 1000); // Update every second
+    
+    return intervalId;
+  };
+
+  const updateBatchStatus = async () => {
+    try {
+      const batch = await apiService.getBatch(batchId);
+      setBatchStatus(batch.status);
+    } catch (error) {
+      console.error('Failed to update batch status:', error);
     }
   };
 
   const handlePauseResume = () => {
-    setIsPaused(!isPaused);
-    if (isPaused) {
-      // Resume processing from current file
-      const remainingFiles = files.slice(currentFileIndex);
-      startProcessing(files);
-    }
+    // Note: Real batch processing is handled by the backend
+    // This UI feedback shows the current state but doesn't actually pause the backend
+    toast({
+      title: "Backend Processing",
+      description: "Processing is handled by the backend and cannot be paused from the UI.",
+      variant: "default",
+    });
   };
 
   const handleCancel = () => {
     setShowCancelModal(true);
   };
 
-  const confirmCancel = () => {
-    setIsProcessing(false);
-    setIsPaused(false);
-    toast({
-      title: "Processing cancelled",
-      description: "The watermarking process has been stopped.",
-      variant: "destructive",
-    });
-    navigate('/upload');
+  const confirmCancel = async () => {
+    try {
+      processingStateRef.current.shouldStop = true;
+      
+      // Update batch status to failed (cancelled)
+      await apiService.updateBatchStatus(batchId, 'failed');
+      
+      setIsProcessing(false);
+      setIsPaused(false);
+      
+      toast({
+        title: "Processing cancelled",
+        description: "The watermarking process has been stopped.",
+        variant: "destructive",
+      });
+      
+      navigate('/upload');
+    } catch (error) {
+      console.error('Failed to cancel batch:', error);
+      toast({
+        title: "Cancel failed",
+        description: "Failed to cancel processing. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   const completedFiles = files.filter(f => f.status === 'completed').length;
   const failedFiles = files.filter(f => f.status === 'failed').length;
   const processingFile = files.find(f => f.status === 'processing');
+  const isCompleted = batchStatus === 'completed' || batchStatus === 'failed';
+  const canNavigateToResults = isCompleted && overallProgress >= 100;
 
   return (
     <div className="min-h-screen bg-gradient-secondary">
@@ -170,15 +290,27 @@ const Processing = () => {
                 <CardHeader>
                   <CardTitle className="flex items-center justify-between">
                     <span className="flex items-center gap-2">
-                      <FileText className="h-5 w-5 text-primary" />
-                      Batch Progress
+                      {isSingleMode ? (
+                        <>
+                          <User className="h-5 w-5 text-primary" />
+                          Document Progress
+                        </>
+                      ) : (
+                        <>
+                          <FileText className="h-5 w-5 text-primary" />
+                          Batch Progress
+                        </>
+                      )}
                     </span>
-                    <Badge variant={isProcessing ? "default" : "secondary"}>
-                      {isProcessing ? (isPaused ? 'Paused' : 'Processing') : 'Completed'}
+                    <Badge variant={isProcessing ? "default" : isCompleted ? "secondary" : "outline"}>
+                      {isProcessing ? 'Processing' : batchStatus === 'completed' ? 'Completed' : batchStatus === 'failed' ? 'Failed' : 'Ready'}
                     </Badge>
                   </CardTitle>
                   <CardDescription>
-                    Processing {completedFiles} of {files.length} documents
+                    {isSingleMode 
+                      ? `Processing your document with watermarks`
+                      : `Processing ${completedFiles} of ${files.length} documents`
+                    }
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -206,26 +338,17 @@ const Processing = () => {
                     <Button
                       variant="outline"
                       onClick={handlePauseResume}
-                      disabled={!isProcessing && !isPaused}
+                      disabled={!isProcessing}
                       className="flex-1"
                     >
-                      {isPaused ? (
-                        <>
-                          <Play className="mr-2 h-4 w-4" />
-                          Resume
-                        </>
-                      ) : (
-                        <>
-                          <Pause className="mr-2 h-4 w-4" />
-                          Pause
-                        </>
-                      )}
+                      <Pause className="mr-2 h-4 w-4" />
+                      Processing...
                     </Button>
                     
                     <Button
                       variant="destructive"
                       onClick={handleCancel}
-                      disabled={!isProcessing && !isPaused}
+                      disabled={isCompleted}
                       className="flex-1"
                     >
                       <X className="mr-2 h-4 w-4" />
@@ -293,21 +416,14 @@ const Processing = () => {
                   </div>
                 </div>
 
-                {overallProgress === 100 && (
+                {canNavigateToResults && (
                   <Button 
                     className="w-full bg-gradient-primary hover:scale-[1.02] transition-transform duration-200 shadow-elevated"
-                    onClick={() => navigate('/results', {
-                      state: {
-                        files,
-                        watermarkSettings,
-                        processedFiles: completedFiles,
-                        failedFiles
-                      }
-                    })}
+                    onClick={() => navigate(`/results/${batchId}${isSingleMode ? '?mode=single' : ''}`)}
                     size="lg"
                   >
                     <Download className="mr-2 h-4 w-4" />
-                    View Results
+                    {isSingleMode ? 'Download File' : 'View Results'}
                   </Button>
                 )}
 

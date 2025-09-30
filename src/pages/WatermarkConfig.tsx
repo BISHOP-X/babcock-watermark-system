@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
-import { ArrowLeft, Settings, Eye, Download, Palette, Type, Move, Sliders } from "lucide-react";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { ArrowLeft, Settings, Eye, Download, Palette, Type, Move, Sliders, User, Users } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,66 +12,126 @@ import { Separator } from "@/components/ui/separator";
 import { Header } from "@/components/Header";
 import { WatermarkPreview } from "@/components/WatermarkPreview";
 import { useToast } from "@/hooks/use-toast";
-
-interface WatermarkSettings {
-  text: string;
-  opacity: number;
-  fontSize: 'small' | 'medium' | 'large';
-  color: string;
-  applyToAll: boolean;
-}
+import { apiService, WatermarkSettings } from "@/lib/api";
 
 const WatermarkConfig = () => {
   const navigate = useNavigate();
-  const location = useLocation();
+  const { batchId } = useParams<{ batchId: string }>();
+  const [searchParams] = useSearchParams();
   const { toast } = useToast();
   
-  // Get files from previous step (would normally come from state management)
-  const uploadedFiles = location.state?.files || [];
+  // Check if this is single file mode
+  const isSingleMode = searchParams.get('mode') === 'single';
   
+  const [batchData, setBatchData] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [settings, setSettings] = useState<WatermarkSettings>({
     text: "College of Postgraduate School, BU",
     opacity: 30,
     fontSize: 'medium',
-    color: '#1e40af',
-    applyToAll: true
+    color: '#1e40af'
   });
 
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
+  // Load batch data from API
   useEffect(() => {
-    if (uploadedFiles.length === 0) {
-      toast({
-        title: "No files found",
-        description: "Please upload files first before configuring watermarks.",
-        variant: "destructive",
-      });
-      navigate('/upload');
-    }
-  }, [uploadedFiles, navigate, toast]);
+    const loadBatchData = async () => {
+      if (!batchId) {
+        toast({
+          title: "Invalid batch ID",
+          description: "Please upload files first before configuring watermarks.",
+          variant: "destructive",
+        });
+        navigate('/upload');
+        return;
+      }
+
+      try {
+        setIsLoading(true);
+        console.log('📊 Loading batch data for:', batchId);
+        
+        const batch = await apiService.getBatch(batchId);
+        setBatchData(batch);
+        
+        // Use existing watermark settings if available
+        if (batch.watermarkSettings) {
+          setSettings(batch.watermarkSettings);
+        }
+        
+        console.log('✅ Batch data loaded:', batch);
+        
+      } catch (error) {
+        console.error('❌ Failed to load batch data:', error);
+        toast({
+          title: "Failed to load batch",
+          description: "Could not load batch information. Please try again.",
+          variant: "destructive",
+        });
+        navigate('/upload');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadBatchData();
+  }, [batchId, navigate, toast]);
 
   const handleSettingChange = (key: keyof WatermarkSettings, value: any) => {
     setSettings(prev => ({
       ...prev,
       [key]: value
     }));
+    setHasUnsavedChanges(true);
   };
 
-  const handlePreviewUpdate = () => {
+  const handlePreviewUpdate = async () => {
+    if (!batchId) return;
+    
     setIsPreviewLoading(true);
-    // Simulate preview generation
-    setTimeout(() => {
+    
+    try {
+      // Update batch with new watermark settings
+      await apiService.updateBatchWatermarkSettings(batchId, settings);
+      
+      setHasUnsavedChanges(false);
+      
+      toast({
+        title: "Settings updated",
+        description: "Watermark settings have been saved and preview updated.",
+      });
+      
+    } catch (error) {
+      console.error('Failed to update settings:', error);
+      toast({
+        title: "Update failed",
+        description: "Failed to save watermark settings. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
       setIsPreviewLoading(false);
-    }, 800);
+    }
   };
 
-  const handleNext = () => {
-    navigate('/processing', { 
-      state: { 
-        files: uploadedFiles, 
-        watermarkSettings: settings 
-      } 
-    });
+  const handleNext = async () => {
+    if (!batchId) return;
+    
+    try {
+      // Save current settings to batch before proceeding
+      if (hasUnsavedChanges) {
+        await apiService.updateBatchWatermarkSettings(batchId, settings);
+      }
+      
+      navigate(`/processing/${batchId}${isSingleMode ? '?mode=single' : ''}`);
+    } catch (error) {
+      console.error('Failed to save settings:', error);
+      toast({
+        title: "Save failed",
+        description: "Failed to save settings. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   const colorOptions = [
@@ -80,6 +140,39 @@ const WatermarkConfig = () => {
     { label: 'Black', value: '#000000' },
     { label: 'Red', value: '#dc2626' },
   ];
+
+  // Show loading state while fetching batch data
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-secondary">
+        <Header />
+        <main className="container mx-auto px-4 py-8">
+          <div className="flex items-center justify-center min-h-[400px]">
+            <div className="text-center space-y-4">
+              <div className="animate-spin rounded-full h-12 w-12 border-4 border-primary border-t-transparent mx-auto"></div>
+              <p className="text-muted-foreground">Loading batch information...</p>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // Show error if no batch data
+  if (!batchData) {
+    return (
+      <div className="min-h-screen bg-gradient-secondary">
+        <Header />
+        <main className="container mx-auto px-4 py-8">
+          <div className="text-center space-y-4">
+            <h1 className="text-2xl font-bold text-foreground">Batch Not Found</h1>
+            <p className="text-muted-foreground">The requested batch could not be found.</p>
+            <Button onClick={() => navigate('/upload')}>Return to Upload</Button>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-secondary">
@@ -99,11 +192,24 @@ const WatermarkConfig = () => {
             </Button>
           </div>
           
-          <h1 className="text-3xl md:text-4xl font-bold text-foreground mb-2">
-            Configure Watermark Settings
+          <h1 className="text-3xl md:text-4xl font-bold text-foreground mb-2 flex items-center gap-3">
+            {isSingleMode ? (
+              <>
+                <User className="h-8 w-8 text-primary" />
+                Configure Document Watermark
+              </>
+            ) : (
+              <>
+                <Users className="h-8 w-8 text-primary" />
+                Configure Watermark Settings
+              </>
+            )}
           </h1>
           <p className="text-muted-foreground text-lg">
-            Customize how the CPGS watermark will appear on your documents
+            {isSingleMode 
+              ? 'Customize how the CPGS watermark will appear on your document'
+              : 'Customize how the CPGS watermark will appear on your documents'
+            }
           </p>
         </div>
 
@@ -211,21 +317,32 @@ const WatermarkConfig = () => {
 
                 <Separator />
 
-                {/* Apply to All Files */}
-                <div className="flex items-center justify-between">
-                  <div className="space-y-1">
-                    <Label className="flex items-center gap-2">
-                      <Move className="h-4 w-4 text-primary" />
-                      Apply to All Files
-                    </Label>
-                    <p className="text-sm text-muted-foreground">
-                      Use these settings for all {uploadedFiles.length} documents
-                    </p>
+                {/* Processing Info */}
+                <div className="bg-primary-light/20 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    {isSingleMode ? (
+                      <>
+                        <User className="h-4 w-4 text-primary" />
+                        <span className="font-medium text-sm">Document Configuration</span>
+                      </>
+                    ) : (
+                      <>
+                        <Move className="h-4 w-4 text-primary" />
+                        <span className="font-medium text-sm">Batch Configuration</span>
+                      </>
+                    )}
                   </div>
-                  <Switch
-                    checked={settings.applyToAll}
-                    onCheckedChange={(checked) => handleSettingChange('applyToAll', checked)}
-                  />
+                  <CardDescription className="text-sm">
+                    {isSingleMode 
+                      ? 'These settings will be applied to your document'
+                      : `These settings will be applied to all ${batchData?.files?.length || 0} documents in this batch`
+                    }
+                  </CardDescription>
+                  {batchId && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {isSingleMode ? 'Processing' : 'Batch'} ID: {batchId.slice(0, 8)}...
+                    </p>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -233,13 +350,13 @@ const WatermarkConfig = () => {
             {/* Action Buttons */}
             <div className="flex gap-4">
               <Button 
-                variant="outline" 
+                variant={hasUnsavedChanges ? "default" : "outline"}
                 onClick={handlePreviewUpdate}
                 disabled={isPreviewLoading}
                 className="flex-1"
               >
                 <Eye className="mr-2 h-4 w-4" />
-                {isPreviewLoading ? 'Updating...' : 'Update Preview'}
+                {isPreviewLoading ? 'Saving...' : hasUnsavedChanges ? 'Save Settings' : 'Settings Saved'}
               </Button>
               
               <Button 
@@ -247,7 +364,7 @@ const WatermarkConfig = () => {
                 className="flex-1 bg-gradient-primary hover:scale-[1.02] transition-transform duration-200 shadow-elevated"
                 size="lg"
               >
-                Next Step
+                {isSingleMode ? 'Process Document' : 'Start Processing'}
                 <Download className="ml-2 h-4 w-4" />
               </Button>
             </div>

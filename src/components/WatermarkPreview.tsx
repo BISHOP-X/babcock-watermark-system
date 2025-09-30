@@ -1,9 +1,4 @@
-interface WatermarkSettings {
-  text: string;
-  opacity: number;
-  fontSize: 'small' | 'medium' | 'large';
-  color: string;
-}
+import { WatermarkSettings } from "@/lib/api";
 
 interface WatermarkPreviewProps {
   settings: WatermarkSettings;
