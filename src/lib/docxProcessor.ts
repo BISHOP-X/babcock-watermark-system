@@ -1126,7 +1126,7 @@ export class DocxProcessor {
           const progress = (completedTasks.size / tasks.length) * 100
           onProgress?.({ 
             stage: `Async processing: ${completedTasks.size}/${tasks.length} chunks complete`, 
-            progress: 20 + (progress * 0.4) // 20-60% range for async processing
+            progress: Math.round(20 + (progress * 0.4)) // 20-60% range for async processing
           })
           
           console.log(`📦 [STAGE 6C] Worker ${availableWorker.id} completed task ${pendingTask.id} in ${processingTime}ms`)
@@ -2736,8 +2736,8 @@ export class DocxProcessor {
           return {
             src: "data:" + image.contentType + ";base64," + imageBuffer,
             alt: 'Embedded image',
-            'data-content-type': image.contentType,
-            'data-original-size': imageBuffer.length
+            'data-content-type': String(image.contentType || ''),
+            'data-original-size': String(imageBuffer.length || 0)
           };
         });
       })

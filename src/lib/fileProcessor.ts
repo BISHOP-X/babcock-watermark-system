@@ -39,7 +39,7 @@ export class FileProcessorService {
           watermarkSettings,
           (progress) => {
             // Update file progress (25% base + 50% processing range)
-            const adjustedProgress = 25 + (progress.progress * 0.5)
+            const adjustedProgress = Math.round(25 + (progress.progress * 0.5))
             apiService.updateFileStatus(file.id, 'processing', adjustedProgress)
               .catch(err => console.warn('Progress update failed:', err))
           }
