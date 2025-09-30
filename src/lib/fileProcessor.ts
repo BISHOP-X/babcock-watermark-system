@@ -1,5 +1,4 @@
 import { pdfProcessor } from './pdfProcessor'
-import { docxProcessor } from './docxProcessor'
 import { apiService, WatermarkSettings, FileData } from './api'
 import { supabase } from './supabase'
 import { v4 as uuidv4 } from 'uuid'
@@ -170,8 +169,6 @@ export class FileProcessorService {
 }
 
 export const fileProcessor = new FileProcessorService()
-
-import { WatermarkSettings } from './api'
 
 export class DocxProcessorService {
   async addWatermark(buffer: ArrayBuffer, watermarkSettings: WatermarkSettings): Promise<Uint8Array> {
