@@ -414,7 +414,7 @@ const Dashboard = () => {
                 {activities.length > 0 ? (
                   <RecentActivity 
                     activities={activities.map((activity, index) => ({
-                      id: parseInt(activity.id.replace(/[^0-9]/g, '') || '0') + index, // Add index to ensure uniqueness
+                      id: `${activity.id}_${index}`, // Use string ID to avoid duplicate numerical keys
                       action: activity.action,
                       description: activity.description,
                       time: activity.relativeTime,

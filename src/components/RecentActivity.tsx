@@ -1,7 +1,7 @@
 import { CheckCircle2, Clock, Info, AlertTriangle } from "lucide-react";
 
 interface Activity {
-  id: number;
+  id: string | number;
   action: string;
   description: string;
   time: string;
