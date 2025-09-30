@@ -573,7 +573,7 @@ const WatermarkConfig = () => {
                         Apply to Pages
                       </Label>
                       <Select 
-                        value={settings.pageSpecific?.pageRange || 'all'} 
+                        value={typeof settings.pageSpecific?.pageRange === 'string' ? settings.pageSpecific.pageRange : 'all'} 
                         onValueChange={(value) => handlePageSpecificChange('pageRange', value)}
                       >
                         <SelectTrigger>

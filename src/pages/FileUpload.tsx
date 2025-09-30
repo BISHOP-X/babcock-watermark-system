@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { Upload, FileText, X, AlertCircle, CheckCircle2, Database, Settings, ArrowRight, Users, User } from "lucide-react";
+import { Upload, AlertCircle, CheckCircle2, Database, Settings, ArrowRight, Users, User } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -210,8 +210,8 @@ const FileUpload = () => {
       // Use default watermark settings (will be configured in next step)
       const watermarkSettings = {
         text: 'CPGS - Babcock University',
-        position: 'center' as const,
-        opacity: 0.3,
+        position: { type: 'center' as const },
+        opacity: 30,
         fontSize: 'medium' as const,
         color: '#000000'
       };
